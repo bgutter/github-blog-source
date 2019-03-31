@@ -1,0 +1,3 @@
+[submodule "submodules/htmlize"]
+	path = submodules/htmlize
+	url = https://github.com/hniksic/emacs-htmlize.git
