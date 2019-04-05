@@ -23,6 +23,9 @@
    sourcedir "./"
    pubdir    "../bgutter.github.io")
 
+;; Don't prompt for code execution
+(setq org-confirm-babel-evaluate nil)
+
 ;;
 ;; Define the publishing process
 ;;

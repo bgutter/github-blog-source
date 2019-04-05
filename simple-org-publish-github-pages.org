@@ -1,0 +1,175 @@
+#+TITLE: A Very Short Guide to Publishing Org-Mode to Github Pages
+#+SETUPFILE: https://fniessen.github.io/org-html-themes/setup/theme-readtheorg.setup
+
+I've found a number of guides for using org-mode to publish blogs on Github, but none that fit the bill for me exactly. The process I landed on, which I outline below;
+
+- Maintains the org source-files and build-scripts in a separate repo from production
+- Does all publishing without relying on your system's emacs configuration via Makefile and =emacs --quick --script=
+- Uses Github hosted CSS to easily prettify your pages
+- Is very, very easy to get started with
+
+* Create Your Github Pages Repository
+
+This repo will contain your deployed HTML files. This is the content that Github will serve on your behalf at =your-github-username.github.io=.
+
+Follow the directions [[https://pages.github.com/][here]]. It basically boils down to creating a new repo with the /exact/ name =your-github-username.github.io=. Allow Github to generate a README.md.
+
+Once that's done, clone this to somewhere on your development machine:
+
+#+BEGIN_SRC sh
+cd ~/projects
+git clone https://github.com/username/username.github.io
+#+END_SRC
+
+You can also use git:// or ssh:// in place of https:// if you prefer -- it shouldn't matter, provided your SSH keys are configured.
+
+* Create Your Source Repository
+
+This repo will contain your source org files. I've seen a number of other guides which recommend creating a branch within the production repo for this, but I find that somewhat unintuitive.
+
+You can name it whatever you like. I call mine =github-blog-source=. Go ahead and clone it down as well.
+
+#+BEGIN_SRC sh
+cd ~/projects
+git clone https://github.com/username/github-blog-source
+#+END_SRC
+
+* Add Your First Page
+
+In the development repo (=github-blog-source=), create a file named exactly =index.org=. This file will become =index.html= on your deployed site.
+
+In typical org markup, define the page title and at least one heading. Additionally, include a =SETUPFILE= header line, which embeds some CSS and JavaScript into your deployed site. It's beautiful and low effort, but as always, be wary of untrusted external dependencies. You may consider downloading the [[https://github.com/fniessen/org-html-themes][the code from fniessen's Github]] and placing it directly in your source repo, to be embedded directly into the deployed site. Major thanks for fniessen for this theme, and if you're a front-end dev, he seems quite happy to have more themes contributed.
+
+#+BEGIN_SRC org
+  #+TITLE: Username's Github Pages
+  #+SETUPFILE: https://fniessen.github.io/org-html-themes/setup/theme-readtheorg.setup
+
+  * Some Heading
+  Some content.
+
+  ** Subheading
+#+END_SRC
+
+* Add Deployment Scripts
+
+This step, as well as the next, are distilled from the [[https://orgmode.org/worg/org-tutorials/org-publish-html-tutorial.html][official org-mode HTML publishing guide]]. I strongly recommend reading it. My deviations from this guide are extremely minor, and mostly for brevity. The only significant difference is that I place the publishing code in a standalone script, which runs independent of your system configuration.
+
+First, create a simple Makefile which will compile your website from org into HTML. Just save this in the root directory of =github-blog-source=, alongside =index.org=, as a plain text file named =Makefile=.
+
+#+BEGIN_SRC makefile
+# Execute publish.lisp with emacs (ignoring system config files)
+
+publish:
+	emacs --quick --script publish.lisp
+#+END_SRC
+
+Next, we need to create =publish.lisp=. This is where all the real work happens. For details beyond the embedded comments, please read the official documentation linked above. However, do note the following;
+- =username= needs to be replace with your Github username
+- It assumes that you are running =make= from the root of your source repo.
+- It assumes that your source and production repos are in the same directory (and that the production repo is, therefore, located at =../username.github.io=, relative to =github-blog-source=.
+- It depends on the =htmlize= emacs package, which we do not yet have. Even if you have it installed on your machine, it will not be available in builds here, due to the =--quick= option.
+- The =:base-extension= value in =org-publish-project-alist= defines the extensions of any static resources your site may need. Make sure that the values here are sufficient for your purposes.
+
+#+BEGIN_SRC emacs-lisp
+;;
+;; publish.lisp (Modified from https://orgmode.org/worg/org-tutorials/org-publish-html-tutorial.html)
+;;
+
+(require 'ox-publish)
+
+;; htmlize is needed for code-block formatting
+;; load the submodule
+(load-file "./submodules/htmlize/htmlize.el")
+(require 'htmlize)
+
+;; This is required for fniessen's readTheOrg theme
+(setq org-html-htmlize-output-type 'css)
+
+;; !!! REPLACE WITH YOUR SITE NAME !!!
+(setq
+   sourcedir "./"
+   pubdir    "../username.github.io")
+
+;; Don't prompt for code execution
+(setq org-confirm-babel-evaluate nil)
+
+;; Define the publishing process
+(setq org-publish-project-alist
+      `(
+
+        ;; org->HTML
+        ("org-notes"
+         :base-directory ,sourcedir
+         :base-extension "org"
+         :publishing-directory ,pubdir
+         :recursive t
+         :publishing-function org-html-publish-to-html
+         :headline-levels 4
+         :auto-preamble t)
+
+        ;; resource copying
+        ("org-static"
+         :base-directory ,sourcedir
+         :base-extension "css\\|js\\|png\\|jpg\\|gif\\|pdf\\|mp3\\|ogg"
+         :publishing-directory ,pubdir
+         :recursive t
+         :publishing-function org-publish-attachment)
+
+        ;; final publish command
+        ("blog" :components ("org-notes" "org-static"))))
+
+;; Publish the site
+(org-publish-project "blog")
+#+END_SRC
+
+Finally, we will pull in htmlize as a submodule, at =submodules/htmlize=. This makes the package available to the instance of emacs spawned in our build script via the call to =load-file=.
+
+#+BEGIN_SRC sh
+cd ~/projects/github-blog-source
+git submodule add https://github.com/hniksic/emacs-htmlize.git submodules/htmlize
+#+END_SRC
+
+Alternatively, if you remove the =--quick= argument from your =Makefile=, and remove the =load-file= call from =publish.lisp=, you could use the version of =htmlize= installed via =package-install= in emacs. However, using a submodule permits a repeatable and consistent build environment, and avoids any conflicts that may occur due to your own org customizations. Replacing =--quick= with =--no-init-file= may be a suitable compromise, using your already installed =htmlize= without loading your =init.el=.
+
+* Export
+
+When the script above is executed, org files will be exported to HTML in =~/projects/username.github.io=, and any resources will be copied.
+
+#+BEGIN_SRC sh
+cd ~/projects/github-blog-source
+make
+#+END_SRC
+
+Alternatively, if you're editing =index.org= in emacs, you can run make with =M-x compile RET=. This will open a =*compilation*= buffer, where you can tap =g= to recompile.
+
+If you run =ls ~/projects/username.github.io=, you should see a file called =index.html=. This is the landing page for your site. To view it locally, open =file:///home/computerusername/projects/username.github.io/index.html= in your web browser. Of course, replace =/home/computerusername/projects/= with the actual path to your project.
+
+* Deploying
+
+Once you're satisfied with your work, you'll need to commit and push changes in both repos.
+
+#+BEGIN_SRC sh
+# Commit and push source
+cd ~/projects/github-blog-source
+git add publish.lisp Makefile index.org # ...submodule should already be staged
+git commit # ...then enter a detailed commit message
+git push origin HEAD:master
+
+# Commit and push published HTML
+cd ~/projects/username.github.io
+git add .
+git commit # ...then enter commit message, prefarably referencing the SHA of your commit in github-blog-source
+git push origin HEAD:master
+#+END_SRC
+
+Within a few seconds, your site should be served by Github at =username.github.io=!
+
+* Example
+
+For a more complete example, check out [[https://github.com/bgutter/github-blog-source/tree/298dce21e7b6b8196a26f12cb79218a3acc0b266][this commit]] of my blog source, and [[https://github.com/bgutter/bgutter.github.io/tree/fb9a037f6c432f55544d7391a28301e03417d874][this commit]] of my blog's HTML.
+
+* Adding More Content
+
+Additional pages can be added as new =*.org= files, and images can be included as well. However, take care to only use relative links.
+- Link to different page: =[[./other-page.org][other page]]= will become a link to http://username.github.io/other-page.html when exported.
+- Embedded images work similarly: =[[./resources/image.png]]= will embed said image into your page, just as in normal org-mode.
